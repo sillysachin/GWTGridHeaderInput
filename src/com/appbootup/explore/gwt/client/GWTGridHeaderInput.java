@@ -1,21 +1,26 @@
 package com.appbootup.explore.gwt.client;
 
-import com.appbootup.explore.gwt.shared.FieldVerifier;
+import java.util.Comparator;
+
+import com.appbootup.explore.gwt.client.ContactDatabase.ContactInfo;
+import com.google.gwt.cell.client.CheckboxCell;
+import com.google.gwt.cell.client.EditTextCell;
+import com.google.gwt.cell.client.FieldUpdater;
+import com.google.gwt.cell.client.TextCell;
 import com.google.gwt.core.client.EntryPoint;
 import com.google.gwt.core.client.GWT;
-import com.google.gwt.event.dom.client.ClickEvent;
-import com.google.gwt.event.dom.client.ClickHandler;
-import com.google.gwt.event.dom.client.KeyCodes;
-import com.google.gwt.event.dom.client.KeyUpEvent;
-import com.google.gwt.event.dom.client.KeyUpHandler;
-import com.google.gwt.user.client.rpc.AsyncCallback;
-import com.google.gwt.user.client.ui.Button;
-import com.google.gwt.user.client.ui.DialogBox;
-import com.google.gwt.user.client.ui.HTML;
+import com.google.gwt.dom.client.Style.Unit;
+import com.google.gwt.safehtml.shared.SafeHtmlUtils;
+import com.google.gwt.user.cellview.client.Column;
+import com.google.gwt.user.cellview.client.ColumnSortEvent.ListHandler;
+import com.google.gwt.user.cellview.client.DataGrid;
+import com.google.gwt.user.cellview.client.SimplePager;
+import com.google.gwt.user.cellview.client.SimplePager.TextLocation;
 import com.google.gwt.user.client.ui.Label;
-import com.google.gwt.user.client.ui.RootPanel;
-import com.google.gwt.user.client.ui.TextBox;
-import com.google.gwt.user.client.ui.VerticalPanel;
+import com.google.gwt.user.client.ui.RootLayoutPanel;
+import com.google.gwt.view.client.DefaultSelectionEventManager;
+import com.google.gwt.view.client.MultiSelectionModel;
+import com.google.gwt.view.client.SelectionModel;
 
 /**
  * Entry point classes define <code>onModuleLoad()</code>.
@@ -33,126 +38,99 @@ public class GWTGridHeaderInput implements EntryPoint
 	 */
 	private final GreetingServiceAsync greetingService = GWT.create( GreetingService.class );
 
+	DataGrid<ContactInfo> dataGrid;
+
+	SimplePager pager;
+
 	/**
 	 * This is the entry point method.
 	 */
 	public void onModuleLoad()
 	{
-		final Button sendButton = new Button( "Send" );
-		final TextBox nameField = new TextBox();
-		nameField.setText( "GWT User" );
-		final Label errorLabel = new Label();
+		initDataGrid();
+		// Add the CellList to the adapter in the database.
+		ContactDatabase.get().addDataDisplay( dataGrid );
+		RootLayoutPanel.get().add( dataGrid );
+	}
 
-		// We can add style names to widgets
-		sendButton.addStyleName( "sendButton" );
+	private void initDataGrid()
+	{
+		dataGrid = new DataGrid<ContactInfo>( ContactDatabase.ContactInfo.KEY_PROVIDER );
+		dataGrid.setWidth( "100%" );
+		dataGrid.setAutoHeaderRefreshDisabled( true );
+		dataGrid.setEmptyTableWidget( new Label( "No Data is set." ) );
+		// Attach a column sort handler to the ListDataProvider to sort the list.
+		ListHandler<ContactInfo> sortHandler = new ListHandler<ContactInfo>( ContactDatabase.get().getDataProvider().getList() );
+		dataGrid.addColumnSortHandler( sortHandler );
+		// Create a Pager to control the table.
+		SimplePager.Resources pagerResources = GWT.create( SimplePager.Resources.class );
+		pager = new SimplePager( TextLocation.CENTER, pagerResources, false, 0, true );
+		pager.setDisplay( dataGrid );
 
-		// Add the nameField and sendButton to the RootPanel
-		// Use RootPanel.get() to get the entire body element
-		RootPanel.get( "nameFieldContainer" ).add( nameField );
-		RootPanel.get( "sendButtonContainer" ).add( sendButton );
-		RootPanel.get( "errorLabelContainer" ).add( errorLabel );
+		// Add a selection model so we can select cells.
+		final SelectionModel<ContactInfo> selectionModel = new MultiSelectionModel<ContactInfo>( ContactDatabase.ContactInfo.KEY_PROVIDER );
+		dataGrid.setSelectionModel( selectionModel, DefaultSelectionEventManager.<ContactInfo> createCheckboxManager() );
+		// Initialize the columns.
+		initTableColumns( selectionModel, sortHandler );
+	}
 
-		// Focus the cursor on the name field when the app loads
-		nameField.setFocus( true );
-		nameField.selectAll();
-
-		// Create the popup dialog box
-		final DialogBox dialogBox = new DialogBox();
-		dialogBox.setText( "Remote Procedure Call" );
-		dialogBox.setAnimationEnabled( true );
-		final Button closeButton = new Button( "Close" );
-		// We can set the id of a widget by accessing its Element
-		closeButton.getElement().setId( "closeButton" );
-		final Label textToServerLabel = new Label();
-		final HTML serverResponseLabel = new HTML();
-		VerticalPanel dialogVPanel = new VerticalPanel();
-		dialogVPanel.addStyleName( "dialogVPanel" );
-		dialogVPanel.add( new HTML( "<b>Sending name to the server:</b>" ) );
-		dialogVPanel.add( textToServerLabel );
-		dialogVPanel.add( new HTML( "<br><b>Server replies:</b>" ) );
-		dialogVPanel.add( serverResponseLabel );
-		dialogVPanel.setHorizontalAlignment( VerticalPanel.ALIGN_RIGHT );
-		dialogVPanel.add( closeButton );
-		dialogBox.setWidget( dialogVPanel );
-
-		// Add a handler to close the DialogBox
-		closeButton.addClickHandler( new ClickHandler()
+	private void initTableColumns( final SelectionModel<ContactInfo> selectionModel, ListHandler<ContactInfo> sortHandler )
+	{
+		// Checkbox column. This table will uses a checkbox column for selection.
+		// Alternatively, you can call dataGrid.setSelectionEnabled(true) to enable
+		// mouse selection.
+		Column<ContactInfo, Boolean> checkColumn = new Column<ContactInfo, Boolean>( new CheckboxCell( true, false ) )
 		{
-			public void onClick( ClickEvent event )
+			@Override
+			public Boolean getValue( ContactInfo object )
 			{
-				dialogBox.hide();
-				sendButton.setEnabled( true );
-				sendButton.setFocus( true );
+				// Get the value from the selection model.
+				return selectionModel.isSelected( object );
+			}
+		};
+		dataGrid.addColumn( checkColumn, SafeHtmlUtils.fromSafeConstant( "<br/>" ) );
+		dataGrid.setColumnWidth( checkColumn, 40, Unit.PX );
+
+		// First name.
+		Column<ContactInfo, String> firstNameColumn = new Column<ContactInfo, String>( new EditTextCell() )
+		{
+			@Override
+			public String getValue( ContactInfo object )
+			{
+				return object.getFirstName();
+			}
+		};
+		firstNameColumn.setSortable( true );
+		sortHandler.setComparator( firstNameColumn, new Comparator<ContactInfo>()
+		{
+			@Override
+			public int compare( ContactInfo o1, ContactInfo o2 )
+			{
+				return o1.getFirstName().compareTo( o2.getFirstName() );
 			}
 		} );
-
-		// Create a handler for the sendButton and nameField
-		class MyHandler implements ClickHandler, KeyUpHandler
+		dataGrid.addColumn( firstNameColumn, "First Name" );
+		firstNameColumn.setFieldUpdater( new FieldUpdater<ContactInfo, String>()
 		{
-			/**
-			 * Fired when the user clicks on the sendButton.
-			 */
-			public void onClick( ClickEvent event )
+			@Override
+			public void update( int index, ContactInfo object, String value )
 			{
-				sendNameToServer();
+				// Called when the user changes the value.
+				object.setFirstName( value );
+				ContactDatabase.get().refreshDisplays();
 			}
-
-			/**
-			 * Fired when the user types in the nameField.
-			 */
-			public void onKeyUp( KeyUpEvent event )
+		} );
+		dataGrid.setColumnWidth( firstNameColumn, 200, Unit.PX );
+		// Empty Column.
+		Column<ContactInfo, String> emptyColumn = new Column<ContactInfo, String>( new TextCell() )
+		{
+			@Override
+			public String getValue( ContactInfo object )
 			{
-				if ( event.getNativeKeyCode() == KeyCodes.KEY_ENTER )
-				{
-					sendNameToServer();
-				}
+				return "";
 			}
-
-			/**
-			 * Send the name from the nameField to the server and wait for a response.
-			 */
-			private void sendNameToServer()
-			{
-				// First, we validate the input.
-				errorLabel.setText( "" );
-				String textToServer = nameField.getText();
-				if ( !FieldVerifier.isValidName( textToServer ) )
-				{
-					errorLabel.setText( "Please enter at least four characters" );
-					return;
-				}
-
-				// Then, we send the input to the server.
-				sendButton.setEnabled( false );
-				textToServerLabel.setText( textToServer );
-				serverResponseLabel.setText( "" );
-				greetingService.greetServer( textToServer, new AsyncCallback<String>()
-				{
-					public void onFailure( Throwable caught )
-					{
-						// Show the RPC error message to the user
-						dialogBox.setText( "Remote Procedure Call - Failure" );
-						serverResponseLabel.addStyleName( "serverResponseLabelError" );
-						serverResponseLabel.setHTML( SERVER_ERROR );
-						dialogBox.center();
-						closeButton.setFocus( true );
-					}
-
-					public void onSuccess( String result )
-					{
-						dialogBox.setText( "Remote Procedure Call" );
-						serverResponseLabel.removeStyleName( "serverResponseLabelError" );
-						serverResponseLabel.setHTML( result );
-						dialogBox.center();
-						closeButton.setFocus( true );
-					}
-				} );
-			}
-		}
-
-		// Add a handler to send the name to the server
-		MyHandler handler = new MyHandler();
-		sendButton.addClickHandler( handler );
-		nameField.addKeyUpHandler( handler );
+		};
+		dataGrid.addColumn( emptyColumn, " " );
+		dataGrid.setColumnWidth( emptyColumn, 20, Unit.PCT );
 	}
 }
